@@ -1,0 +1,64 @@
+trigger:
+- main  # or your default branch
+
+pool:
+  Uipath
+
+variables:
+  ORCHESTRATOR_URL: 'https://cloud.uipath.com/smsjsk/DefaultTenant/orchestrator_'
+  TENANT_NAME: 'DefaultTenant'
+  FOLDER_NAME: 'Karan'
+  API_KEY: 'JXmH-cpbqw7ZMB10fdtreSUOth3YK1pnMFEaAI0olpGYT'  # Store your API key securely in Azure DevOps
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.x'
+    addToPath: true
+
+- script: |
+    pip install requests
+  displayName: 'Install dependencies'
+
+- script: |
+    import os
+    import requests
+    import json
+
+    orchestrator_url = "$(ORCHESTRATOR_URL)"
+    tenant_name = "$(TENANT_NAME)"
+    folder_name = "$(FOLDER_NAME)"
+    api_key = "$(API_KEY)"
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "X-UIPATH-TenantName": tenant_name
+    }
+    
+    # Get folder ID
+    folders_url = f"{orchestrator_url}/odata/Folders"
+    response = requests.get(folders_url, headers=headers)
+    response.raise_for_status()
+    folders = response.json()['value']
+    folder_id = next(folder['Id'] for folder in folders if folder['DisplayName'] == folder_name)
+    
+    # Create test cases from .xaml files
+    test_cases_url = f"{orchestrator_url}/odata/TestCases"
+    xaml_files_path = "$(Build.SourcesDirectory)"  # Path where .xaml files are stored
+
+    for root, dirs, files in os.walk(xaml_files_path):
+        for file in files:
+            if file.endswith('.xaml'):
+                file_path = os.path.join(root, file)
+                test_case_data = {
+                    "Name": os.path.splitext(file)[0],  # Use the file name without extension as the test case name
+                    "Description": f"Test case created from {file}",
+                    "FilePath": file_path,  # This field might need to be adjusted based on UiPath Orchestrator API requirements
+                    "FolderId": folder_id
+                }
+                
+                response = requests.post(test_cases_url, headers=headers, json=test_case_data)
+                response.raise_for_status()
+                print(f"Test case created from {file} with ID: {response.json()['Id']}")
+
+  displayName: 'Create Test Cases from .xaml Files'
